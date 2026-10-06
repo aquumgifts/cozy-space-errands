@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Cozy Space Errands</title>
+<!-- Juego corto de vista cenital para itch.io: repartir cuatro paquetes por la estación.
+     Hecho con los packs Cozy Space: salas (Interiors), tripulación caminando en 4 direcciones
+     (Walking Crew), muebles (Station), retratos y cajas de diálogo (Portraits), íconos (Icons & UI),
+     destellos (FX), texto (Pixel Font), música (Music) y sonidos (SFX).
+     armar.sh copia todo a dist/ y arma el ZIP. Capturas: #captura-a | b | c | d. -->
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1020; overflow: hidden; touch-action: none; user-select: none; -webkit-user-select: none; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+"use strict";
+const W = 320, H = 180, T = 16;
+const SET = "https://itch.io/c/8266575";
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+let S = 3;
+function ajustar() {
+  const k = Math.min(innerWidth / W, innerHeight / H);
+  S = k >= 1 ? Math.floor(k) : k;
+  cv.width = W * S; cv.height = H * S; ctx.imageSmoothingEnabled = false;
+}
+addEventListener("resize", ajustar); ajustar();
+
+// ---------- imágenes ----------
+const PROPS = ["console", "desk", "bed", "sofa", "plant-monstera", "plant-fern", "server-rack", "water-cooler", "crate", "workbench", "machine", "bookshelf", "dual-monitor-desk", "rug", "file-cabinet", "plant-snake-plant", "wall-clock"];
+const CREW = ["crew-navy", "crew-teal", "crew-lab-coat", "crew-plum", "crew-commander-red", "crew-slate"];
+const RETRATOS = { ada: "captain-ada", rosa: "engineer-rosa", lin: "doctor-lin", noor: "officer-noor", gus: "mechanic-gus" };
+const ARCH = {
+  puerta: "tiles/door-4f", caja: "ui/dialog-box-light", etiqueta: "ui/name-tag", flecha: "ui/continue-arrow-2f",
+  btnTeal: "ui/button-teal-normal", btnTealH: "ui/button-teal-hover", btnAmber: "ui/button-amber-normal", btnAmberH: "ui/button-amber-hover",
+  panel: "ui/panel-dark", destello: "fx/pickup-sparkle-6f", estrellas: "backgrounds/stars-far-tile",
+  "i-chip": "icons/icon-chip", "i-flask": "icons/icon-flask", "i-apple": "icons/icon-apple", "i-keycard": "icons/icon-keycard", "i-crate": "icons/icon-crate", "i-check": "icons/icon-check",
+};
+// Todos los tiles salen de la hoja del tileset de Interiors (10 columnas de 16 px); los muros miden 16 × 32.
+ARCH.tileset = "tiles/cozy-space-interiors-tileset";
+const ID_TILE = { "floor-steel": 0, "floor-steel-plain": 1, "floor-steel-bolts": 2, "floor-steel-vent": 3, "floor-grate": 4, "floor-carpet-blue": 5, "floor-carpet-beige": 6, "floor-lab": 7,
+  "floor-hazard": 10, "floor-light-panel": 11, "floor-hatch": 12, "frame-nw": 20, "frame-n": 21, "frame-ne": 22, "frame-w": 30, "frame-e": 32, "frame-sw": 40, "frame-s": 41, "frame-se": 42,
+  wall: 50, "wall-window": 51, "wall-window-planet": 52, "wall-screen": 53, "wall-vent": 54, "wall-pipes": 55, "wall-light": 56, "wall-sign": 57 };
+for (const p of PROPS) ARCH["p:" + p] = "props/" + p;
+for (const c of CREW) ARCH["c:" + c] = "crew/" + c;
+for (const [k, f] of Object.entries(RETRATOS)) ARCH["r:" + k] = "sheets/" + f;
+const IMG = {};
+let cargadas = 0;
+const total = Object.keys(ARCH).length;
+for (const [k, f] of Object.entries(ARCH)) { const im = new Image(); im.onload = im.onerror = () => { cargadas++; }; im.src = "assets/" + f + ".png"; IMG[k] = im; }
+const listo = (k) => IMG[k] && IMG[k].width;
+function img(k, x, y, w, h) {
+  if (k.startsWith("t:")) { const id = ID_TILE[k.slice(2)], alto = id >= 50 ? 32 : 16; if (listo("tileset")) ctx.drawImage(IMG.tileset, (id % 10) * 16, Math.floor(id / 10) * 16, 16, alto, Math.round(x), Math.round(y), 16, alto); return; }
+  if (listo(k)) ctx.drawImage(IMG[k], Math.round(x), Math.round(y), w || IMG[k].width, h || IMG[k].height);
+}
+function cuadro(k, f, fw, fh, x, y, fila = 0) { if (listo(k)) ctx.drawImage(IMG[k], f * fw, fila * fh, fw, fh, Math.round(x), Math.round(y), fw, fh); }
+function nueve(k, x, y, w, h, b = 8) {
+  if (!listo(k)) return;
+  const im = IMG[k], iw = im.width, ih = im.height, cw = iw - 2 * b, ch = ih - 2 * b;
+  x = Math.round(x); y = Math.round(y);
+  for (const p of [[0, 0, b, b, x, y, b, b], [b, 0, cw, b, x + b, y, w - 2 * b, b], [iw - b, 0, b, b, x + w - b, y, b, b],
+    [0, b, b, ch, x, y + b, b, h - 2 * b], [b, b, cw, ch, x + b, y + b, w - 2 * b, h - 2 * b], [iw - b, b, b, ch, x + w - b, y + b, b, h - 2 * b],
+    [0, ih - b, b, b, x, y + h - b, b, b], [b, ih - b, cw, b, x + b, y + h - b, w - 2 * b, b], [iw - b, ih - b, b, b, x + w - b, y + h - b, b, b]]) ctx.drawImage(im, ...p);
+}
+
+// ---------- texto ----------
+for (const [archivo, peso] of [["CozySpacePixel-Regular", "400"], ["CozySpacePixel-Bold", "700"]]) {
+  try { const f = new FontFace("CSP", `url(assets/fonts/${archivo}.woff)`, { weight: peso }); document.fonts.add(f); f.load().catch(() => {}); } catch (e) {}
+}
+function fuente(negrita = false, grande = false) { ctx.font = `${negrita ? 700 : 400} ${grande ? 20 : 10}px CSP, "Courier New", monospace`; }
+function texto(t, x, y, { color = "#171b34", negrita = false, grande = false, alinear = "left", sombra = null } = {}) {
+  fuente(negrita, grande); ctx.textAlign = alinear; ctx.textBaseline = "top";
+  if (sombra) { ctx.fillStyle = sombra; ctx.fillText(t, Math.round(x), Math.round(y) + 1); }
+  ctx.fillStyle = color; ctx.fillText(t, Math.round(x), Math.round(y));
+}
+function partir(t, ancho) {
+  fuente(); const lineas = []; let linea = "";
+  for (const p of t.split(" ")) { const prueba = linea ? linea + " " + p : p; if (ctx.measureText(prueba).width > ancho && linea) { lineas.push(linea); linea = p; } else linea = prueba; }
+  if (linea) lineas.push(linea); return lineas;
+}
+
+// ---------- sonido ----------
+let audio = null, mudo = false, ganancia = null, musica = null;
+try { mudo = localStorage.getItem("cse-mudo") === "1"; } catch (e) {}
+const SONIDOS = { puerta: "door-open", tomar: "key-pickup", entregar: "notification", fin: "jingle-win", pasar: "ui-hover", ok: "ui-confirm", paso: "step-metal", tecla: "typing" };
+const BUF = {};
+async function iniciarAudio() {
+  try {
+    if (!audio) { audio = new (window.AudioContext || window.webkitAudioContext)(); ganancia = audio.createGain(); ganancia.gain.value = mudo ? 0 : 1; ganancia.connect(audio.destination); }
+    if (audio.state === "suspended") await audio.resume();
+    if (musica || audio.state !== "running") return;
+    musica = "cargando";
+    for (const [k, f] of Object.entries(SONIDOS)) fetch(`assets/sfx/${f}.wav`).then(r => r.arrayBuffer()).then(b => audio.decodeAudioData(b)).then(d => { BUF[k] = d; }).catch(() => {});
+    const buf = await audio.decodeAudioData(await (await fetch("assets/music/nebula-drift.wav")).arrayBuffer());
+    const g = audio.createGain(); g.gain.value = 0.3; g.connect(ganancia);
+    const f = audio.createBufferSource(); f.buffer = buf; f.loop = true; f.connect(g); f.start(); musica = f;
+  } catch (e) { musica = null; }
+}
+function sonar(k, vol = 0.5) { if (!audio || !BUF[k] || mudo) return; const f = audio.createBufferSource(), g = audio.createGain(); g.gain.value = vol; f.buffer = BUF[k]; f.connect(g); g.connect(ganancia); f.start(); }
+function alternarMudo() { mudo = !mudo; try { localStorage.setItem("cse-mudo", mudo ? "1" : "0"); } catch (e) {} if (ganancia) ganancia.gain.value = mudo ? 0 : 1; }
+
+// ---------- salas ----------
+// Cada sala ocupa 18 × 10 tiles (marco incluido) y se dibuja centrada. Las columnas 1-16 de la
+// fila 1 llevan el muro frontal (2 tiles de alto); "door:<sala>" es una puerta que lleva a otra sala.
+const OX = 16, OY = 10, COLS = 18, FILAS = 10;
+const PISO_Y0 = OY + 3 * T + 4, PISO_Y1 = OY + (FILAS - 1) * T - 2, PISO_X0 = OX + T + 6, PISO_X1 = OX + (COLS - 1) * T - 6;
+const SALAS = {
+  pasillo: { nombre: "Corridor", piso: "floor-steel", alfombra: null,
+    muro: ["wall-light", "door:carga", "wall-sign", "wall", "door:lab", "wall-window", "wall", "door:enfermeria", "wall-screen", "wall", "door:camarotes", "wall-window-planet", "wall", "door:puente", "wall-pipes", "wall-light"],
+    props: [["water-cooler", 40, 120], ["plant-monstera", 252, 118], ["plant-fern", 70, 128]], npc: null },
+  carga: { nombre: "Cargo bay", piso: "floor-grate", alfombra: ["floor-hazard", 5, 7, 8, 8],
+    muro: ["wall", "wall-vent", "wall-pipes", "wall", "wall-light", "wall", "wall-pipes", "door:pasillo", "wall", "wall-vent", "wall", "wall-light", "wall", "wall-pipes", "wall-vent", "wall"],
+    props: [["crate", 44, 100], ["crate", 62, 104], ["crate", 50, 120], ["machine", 230, 94], ["workbench", 210, 128], ["file-cabinet", 270, 100]], npc: { crew: "crew-slate", quien: "gus", x: 132, y: 116 } },
+  lab: { nombre: "Engineering lab", piso: "floor-lab", alfombra: null,
+    muro: ["wall-screen", "wall", "wall-window", "wall", "door:pasillo", "wall", "wall-window-planet", "wall", "wall-screen", "wall", "wall-light", "wall", "wall-pipes", "wall-screen", "wall", "wall-light"],
+    props: [["console", 150, 90], ["machine", 210, 96], ["server-rack", 262, 86], ["workbench", 40, 124]], npc: { crew: "crew-teal", quien: "rosa", x: 190, y: 128 } },
+  enfermeria: { nombre: "Med bay", piso: "floor-steel-plain", alfombra: ["floor-light-panel", 6, 5, 11, 6],
+    muro: ["wall", "wall-light", "wall", "wall-window", "wall", "wall-light", "door:pasillo", "wall", "wall-screen", "wall", "wall-light", "wall", "wall-window", "wall", "wall-light", "wall"],
+    props: [["bed", 40, 96], ["bed", 70, 96], ["desk", 224, 100], ["plant-snake-plant", 268, 96], ["file-cabinet", 262, 128]], npc: { crew: "crew-lab-coat", quien: "lin", x: 196, y: 130 } },
+  camarotes: { nombre: "Crew quarters", piso: "floor-carpet-beige", alfombra: ["floor-carpet-blue", 6, 5, 11, 7],
+    muro: ["wall", "wall-window-planet", "wall", "wall-light", "wall", "wall", "wall-window", "wall", "wall-light", "door:pasillo", "wall", "wall-window", "wall", "wall-light", "wall-window-planet", "wall"],
+    props: [["bed", 34, 96], ["bookshelf", 66, 92], ["sofa", 200, 100], ["plant-monstera", 262, 96], ["rug", 120, 120]], npc: { crew: "crew-plum", quien: "noor", x: 230, y: 134 } },
+  puente: { nombre: "Bridge", piso: "floor-steel-bolts", alfombra: ["floor-light-panel", 5, 6, 12, 6],
+    muro: ["wall-window", "wall-window-planet", "wall-window", "wall-screen", "wall-window", "wall-window-planet", "wall-window", "wall-screen", "wall-window", "wall-window-planet", "wall-window", "wall-screen", "door:pasillo", "wall-window", "wall-window-planet", "wall-window"],
+    props: [["dual-monitor-desk", 60, 90], ["console", 130, 90], ["console", 190, 90], ["server-rack", 30, 112], ["plant-fern", 280, 124]], npc: { crew: "crew-commander-red", quien: "ada", x: 150, y: 132 } },
+};
+const NOMBRE = { ada: "Captain Ada", rosa: "Engineer Rosa", lin: "Doctor Lin", noor: "Officer Noor", gus: "Mechanic Gus" };
+// paquete: a quién, ícono, qué dicen al recibirlo
+const PAQUETES = [
+  { para: "rosa", sala: "lab", icono: "i-chip", nombre: "chip", gracias: "A new chip! Now the reactor can finally take a nap. Thank you!" },
+  { para: "lin", sala: "enfermeria", icono: "i-flask", nombre: "medicine", gracias: "Just in time. The cough syrup for B0-T. Don't ask how a robot coughs." },
+  { para: "noor", sala: "camarotes", icono: "i-apple", nombre: "fruit box", gracias: "Real apples! From a real planet! I'm sharing these with everyone." },
+  { para: "ada", sala: "puente", icono: "i-keycard", nombre: "keycard", gracias: "My spare keycard. I lock myself out about twice a week. Well done, Cadet." },
+];
+
+// ---------- estado ----------
+let escena = "carga", sala = "pasillo", reloj = 0, tiempo = 0, fundido = 0, esperaPuerta = 0, soltarArriba = false;
+const pj = { x: 160, y: 140, dir: 0, paso: 0, mov: false };
+let llevando = [], entregados = [], dialogo = null, destino = null, teclas = {}, puntero = { x: -1, y: -1 }, botones = [], intro = true, mejor = 0;
+try { mejor = +localStorage.getItem("cse-mejor") || 0; } catch (e) {}
+
+function puertaDe(s, a) { const i = SALAS[s].muro.indexOf("door:" + a); return { x: OX + (i + 1) * T + 8, y: OY + 3 * T }; }
+function entrarSala(nueva, desde) {
+  sala = nueva; fundido = 1; sonar("puerta", 0.35); esperaPuerta = 0.4; soltarArriba = true;   // hay que soltar la flecha para volver a cruzar
+  const p = puertaDe(nueva, desde);
+  pj.x = p.x; pj.y = PISO_Y0 + 6; pj.dir = 0; destino = null;
+}
+function hablar(quien, lineas, alTerminar) { dialogo = { quien, lineas, i: 0, letras: 0, alTerminar }; destino = null; }
+function empezar() {
+  sala = "pasillo"; pj.x = 160; pj.y = 132; pj.dir = 0; llevando = []; entregados = []; tiempo = 0; escena = "juego"; fundido = 1;
+  hablar("ada", ["Morning, Cadet! Mechanic Gus has four parcels in the cargo bay for the crew.", "Grab them and deliver each one. The doors open when you walk up to them."]);
+}
+
+// ---------- colisiones ----------
+function cajaProp([n, x, y]) { const im = IMG["p:" + n]; const w = im && im.width ? im.width : 16, h = im && im.height ? im.height : 16; return n === "rug" ? null : { x: x + 2, y: y + h - 8, w: w - 4, h: 6 }; }
+function libre(x, y) {
+  if (x < PISO_X0 || x > PISO_X1 || y < PISO_Y0 || y > PISO_Y1) return false;
+  for (const p of SALAS[sala].props) { const c = cajaProp(p); if (c && x > c.x - 4 && x < c.x + c.w + 4 && y > c.y - 2 && y < c.y + c.h + 2) return false; }
+  const n = SALAS[sala].npc; if (n && Math.abs(x - n.x) < 8 && Math.abs(y - n.y) < 5) return false;
+  return true;
+}
+
+// ---------- lógica ----------
+function actualizar(dt) {
+  reloj += dt; fundido = Math.max(0, fundido - dt * 3); esperaPuerta = Math.max(0, esperaPuerta - dt);
+  if (!teclas.ArrowUp && !teclas.KeyW) soltarArriba = false;
+  if (escena === "carga" && cargadas >= total) escena = "titulo";
+  if (escena !== "juego") return;
+  if (dialogo) {
+    const t = dialogo.lineas[dialogo.i];
+    if (dialogo.letras < t.length) { const a = Math.floor(dialogo.letras); dialogo.letras = Math.min(t.length, dialogo.letras + dt * 45); if (Math.floor(dialogo.letras) !== a && a % 4 === 0) sonar("tecla", 0.1); }
+    return;
+  }
+  tiempo += dt;
+  let dx = (teclas.ArrowRight || teclas.KeyD ? 1 : 0) - (teclas.ArrowLeft || teclas.KeyA ? 1 : 0);
+  let dy = (teclas.ArrowDown || teclas.KeyS ? 1 : 0) - (teclas.ArrowUp || teclas.KeyW ? 1 : 0);
+  if (destino && !dx && !dy) {
+    const ex = destino.x - pj.x, ey = destino.y - pj.y, d = Math.hypot(ex, ey);
+    if (d < 2) destino = null; else { dx = ex / d; dy = ey / d; }
+  } else if (dx || dy) destino = null;
+  pj.mov = !!(dx || dy);
+  if (pj.mov) {
+    const len = Math.hypot(dx, dy), v = 62 * dt;
+    const nx = pj.x + dx / len * v, ny = pj.y + dy / len * v;
+    if (libre(nx, pj.y)) pj.x = nx; else if (destino) destino = null;
+    if (libre(pj.x, ny)) pj.y = ny;
+    pj.dir = Math.abs(dx) > Math.abs(dy) ? (dx < 0 ? 3 : 4) : (dy < 0 ? 1 : 0);
+    const antes = Math.floor(pj.paso); pj.paso += dt * 8; if (Math.floor(pj.paso) !== antes && Math.floor(pj.paso) % 2 === 0) sonar("paso", 0.08);
+    // puertas: subir pegado al muro frente a una puerta
+    if (dy < 0 && Math.abs(dx) < -dy * 0.6 && pj.y <= PISO_Y0 + 1 && esperaPuerta === 0 && !soltarArriba) {
+      const i = SALAS[sala].muro.findIndex((m, j) => m.startsWith("door:") && Math.abs(pj.x - (OX + (j + 1) * T + 8)) < 9);
+      if (i >= 0) entrarSala(SALAS[sala].muro[i].slice(5), sala);
+    }
+  }
+  // tripulante cerca: entregar o saludar
+  const n = SALAS[sala].npc;
+  if (n && Math.hypot(pj.x - n.x, pj.y - n.y) < 20 && !n.hablado) revisarNpc(n);
+  if (n && Math.hypot(pj.x - n.x, pj.y - n.y) > 30) n.hablado = false;
+}
+function revisarNpc(n) {
+  n.hablado = true;
+  if (n.quien === "gus") {
+    if (!llevando.length && !entregados.length) {
+      hablar("gus", ["Ah, the new cadet. Four parcels: a chip for Rosa, medicine for Lin, fruit for Noor and a keycard for the captain.", "Lab, med bay, quarters and the bridge. Off you go!"], () => { llevando = PAQUETES.slice(); sonar("tomar", 0.5); });
+    } else hablar("gus", [entregados.length === 4 ? "All delivered? Not bad, not bad at all." : `Still ${4 - entregados.length} to go. The doors are on the corridor wall.`]);
+    return;
+  }
+  const p = llevando.find(q => q.para === n.quien);
+  if (p) {
+    hablar(n.quien, [p.gracias], () => {
+      llevando = llevando.filter(q => q !== p); entregados.push(p); sonar("entregar", 0.45);
+      if (entregados.length === 4) setTimeout(() => terminar(), 400);
+    });
+  } else if (entregados.some(q => q.para === n.quien)) hablar(n.quien, ["Thanks again, Cadet!"]);
+  else hablar(n.quien, [llevando.length ? "That's not mine, I think. Check the labels!" : "Hi, Cadet! Gus was looking for you in the cargo bay."]);
+}
+function terminar() {
+  escena = "fin"; sonar("fin", 0.5);
+  if (!mejor || tiempo < mejor) { mejor = tiempo; try { localStorage.setItem("cse-mejor", String(mejor)); } catch (e) {} }
+}
+function avanzarDialogo() {
+  const t = dialogo.lineas[dialogo.i];
+  if (dialogo.letras < t.length) { dialogo.letras = t.length; return; }
+  dialogo.i++; dialogo.letras = 0; sonar("pasar", 0.2);
+  if (dialogo.i >= dialogo.lineas.length) { const f = dialogo.alTerminar; dialogo = null; if (f) f(); }
+}
+
+// ---------- dibujo ----------
+function dibujarSala() {
+  const s = SALAS[sala];
+  for (let y = 0; y < FILAS; y++) for (let x = 0; x < COLS; x++) {
+    const px = OX + x * T, py = OY + y * T;
+    let piso = s.piso;
+    if (s.alfombra) { const [t, x0, y0, x1, y1] = s.alfombra; if (x >= x0 && x <= x1 && y >= y0 && y <= y1) piso = t; }
+    if (x > 0 && x < COLS - 1 && y > 0 && y < FILAS - 1) img("t:" + piso, px, py);
+  }
+  // muro frontal y puertas (se abren cuando el jugador se acerca)
+  s.muro.forEach((m, i) => {
+    const px = OX + (i + 1) * T, py = OY + T;
+    if (m.startsWith("door:")) {
+      const cerca = Math.abs(pj.x - (px + 8)) < 14 && pj.y < PISO_Y0 + 22;
+      cuadro("puerta", cerca ? 3 : 0, 16, 32, px, py);
+    } else img("t:" + m, px, py);
+  });
+  // marco
+  for (let x = 0; x < COLS; x++) { img("t:" + (x === 0 ? "frame-nw" : x === COLS - 1 ? "frame-ne" : "frame-n"), OX + x * T, OY); img("t:" + (x === 0 ? "frame-sw" : x === COLS - 1 ? "frame-se" : "frame-s"), OX + x * T, OY + (FILAS - 1) * T); }
+  for (let y = 1; y < FILAS - 1; y++) { img("t:frame-w", OX, OY + y * T); img("t:frame-e", OX + (COLS - 1) * T, OY + y * T); }
+  // carteles de puertas en el pasillo
+  if (sala === "pasillo") s.muro.forEach((m, i) => { if (m.startsWith("door:")) texto({ carga: "Cargo", lab: "Lab", enfermeria: "Med", camarotes: "Crew", puente: "Bridge" }[m.slice(5)], OX + (i + 1) * T + 8, OY + 3 * T + 1, { alinear: "center", color: "#e6e8f2", sombra: "#0d1020" }); });
+  // cosas que se ordenan por profundidad: muebles, tripulante y jugador
+  const cosas = s.props.map(p => ({ y: p[0] === "rug" ? -1 : p[2] + (IMG["p:" + p[0]].height || 0), f: () => img("p:" + p[0], p[1], p[2]) }));
+  if (s.npc) {
+    const n = s.npc;
+    cosas.push({ y: n.y, f: () => {
+      cuadro("c:" + n.crew, Math.floor(reloj * 3) % 4, 24, 40, n.x - 12, n.y - 24, 2);
+      const tiene = llevando.some(q => q.para === n.quien) || (n.quien === "gus" && !llevando.length && !entregados.length);
+      if (tiene && !dialogo) { const by = n.y - 40 + Math.round(Math.sin(reloj * 4) * 1.5); nueve("panel", n.x - 8, by - 2, 16, 16, 4); texto("!", n.x, by + 1, { negrita: true, alinear: "center", color: "#ffd27a" }); }
+    } });
+  }
+  cosas.push({ y: pj.y, f: () => {
+    const fila = pj.mov ? pj.dir : (pj.dir === 0 ? 2 : pj.dir);
+    const f = pj.mov ? Math.floor(pj.paso) % 4 : (fila === 2 ? Math.floor(reloj * 3) % 4 : 1);
+    cuadro("c:crew-navy", f, 24, 40, pj.x - 12, pj.y - 24, fila);
+    if (llevando.length) img("i-crate", pj.x - 8, pj.y - 44);
+  } });
+  cosas.sort((a, b) => a.y - b.y).forEach(c => c.f());
+  if (destino) { ctx.strokeStyle = "rgba(122,224,200,0.7)"; ctx.strokeRect(Math.round(destino.x) - 3.5, Math.round(destino.y) - 1.5, 7, 3); }
+}
+function dibujarHud() {
+  ctx.fillStyle = "rgba(13,16,32,0.8)"; ctx.fillRect(0, 0, W, 12);
+  texto(SALAS[sala].nombre, 4, 1, { color: "#c9b8ff", negrita: true });
+  PAQUETES.forEach((p, i) => {
+    const x = 150 + i * 20;
+    ctx.globalAlpha = llevando.includes(p) || entregados.includes(p) ? 1 : 0.3; img(p.icono, x, -2); ctx.globalAlpha = 1;
+    if (entregados.includes(p)) img("i-check", x + 6, 2, 10, 10);
+  });
+  const m = Math.floor(tiempo / 60), sg = Math.floor(tiempo % 60);
+  texto(`${m}:${String(sg).padStart(2, "0")}`, W - 72, 1, { color: "#ffd27a" });
+  texto(mudo ? "M off" : "M on", W - 4, 1, { color: "#8f9bb8", alinear: "right" });
+}
+function dibujarDialogo() {
+  const d = dialogo, t = d.lineas[d.i], caja = { x: 6, y: 118, w: 308, h: 58 };
+  nueve("caja", caja.x, caja.y, caja.w, caja.h);
+  const fr = d.letras < t.length && Math.floor(reloj * 8) % 2 ? 6 : 1;
+  if (listo("r:" + d.quien)) ctx.drawImage(IMG["r:" + d.quien], (d.letras < t.length ? fr === 6 ? 6 : 5 : 1) * 96, 0, 96, 96, caja.x + 6, caja.y + 5, 48, 48);
+  fuente(true); const ancho = Math.ceil(ctx.measureText(NOMBRE[d.quien]).width) + 16;
+  nueve("etiqueta", 62, caja.y - 10, ancho, 16, 6); texto(NOMBRE[d.quien], 70, caja.y - 8, { negrita: true });
+  let quedan = Math.floor(d.letras);
+  partir(t, caja.w - 72).slice(0, 3).forEach((l, i) => { texto(l.slice(0, Math.max(0, quedan)), caja.x + 60, caja.y + 10 + i * 12); quedan -= l.length + 1; });
+  if (d.letras >= t.length) cuadro("flecha", Math.floor(reloj * 3) % 2, 8, 8, caja.x + caja.w - 18, caja.y + caja.h - 14);
+}
+function dentro(p, b) { return p.x >= b.x && p.x < b.x + b.w && p.y >= b.y && p.y < b.y + b.h; }
+function boton(k, kH, x, y, w, h, etiqueta, accion) { const b = { x, y, w, h, accion }; botones.push(b); nueve(dentro(puntero, b) ? kH : k, x, y, w, h, 4); texto(etiqueta, x + w / 2, y + Math.round(h / 2) - 6, { alinear: "center", color: "#151325" }); }
+function dibujarTitulo() {
+  const viejo = sala; sala = "pasillo"; dibujarSala(); sala = viejo;
+  ctx.fillStyle = "rgba(13,16,32,0.8)"; ctx.fillRect(0, 0, W, H);
+  texto("COZY SPACE", W / 2, 22, { grande: true, negrita: true, alinear: "center", color: "#f2ecff", sombra: "#2a1f4a" });
+  texto("ERRANDS", W / 2, 44, { grande: true, negrita: true, alinear: "center", color: "#b9a6ff", sombra: "#2a1f4a" });
+  texto("deliver four parcels around a cozy space station", W / 2, 70, { alinear: "center", color: "#c9b8ff" });
+  PAQUETES.forEach((p, i) => img(p.icono, W / 2 - 40 + i * 20, 86));
+  boton("btnTeal", "btnTealH", W / 2 - 45, 112, 90, 18, "START", () => { iniciarAudio(); empezar(); });
+  texto("Arrows / WASD or tap to walk · walk into a door to enter", W / 2, 140, { alinear: "center", color: "#8f9bb8" });
+  if (mejor) texto(`Best time ${Math.floor(mejor / 60)}:${String(Math.floor(mejor % 60)).padStart(2, "0")}`, W / 2, 154, { alinear: "center", color: "#ffd27a" });
+}
+function dibujarFin() {
+  dibujarSala();
+  ctx.fillStyle = "rgba(13,16,32,0.72)"; ctx.fillRect(0, 0, W, H);
+  texto("ALL DELIVERED!", W / 2, 18, { grande: true, negrita: true, alinear: "center", color: "#f2ecff", sombra: "#2a1f4a" });
+  const m = Math.floor(tiempo / 60), sg = Math.floor(tiempo % 60);
+  texto(`Time ${m}:${String(sg).padStart(2, "0")}` + (mejor === tiempo ? "  (new best!)" : ""), W / 2, 44, { negrita: true, alinear: "center", color: "#ffd27a" });
+  texto("Rooms, crew, furniture, portraits, font, music", W / 2, 66, { alinear: "center", color: "#c9b8ff" });
+  texto("and sounds: all free in the Cozy Space set", W / 2, 78, { alinear: "center", color: "#c9b8ff" });
+  boton("btnTeal", "btnTealH", W / 2 - 50, 100, 100, 18, "PLAY AGAIN", empezar);
+  boton("btnAmber", "btnAmberH", W / 2 - 60, 124, 120, 18, "GET THE ASSETS", () => window.open(SET, "_blank"));
+}
+function dibujar() {
+  ctx.setTransform(S, 0, 0, S, 0, 0); ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = "#0d1020"; ctx.fillRect(0, 0, W, H);
+  if (listo("estrellas")) for (let y = 0; y < H; y += IMG.estrellas.height) for (let x = 0; x < W; x += IMG.estrellas.width) ctx.drawImage(IMG.estrellas, x, y);
+  botones = [];
+  if (escena === "carga") texto("Loading " + Math.floor(cargadas / total * 100) + "%", W / 2, H / 2, { alinear: "center", color: "#e6e8f2" });
+  else if (escena === "titulo") dibujarTitulo();
+  else if (escena === "juego") { dibujarSala(); dibujarHud(); if (dialogo) dibujarDialogo(); }
+  else dibujarFin();
+  if (fundido > 0) { ctx.fillStyle = `rgba(13,16,32,${fundido})`; ctx.fillRect(0, 0, W, H); }
+}
+let ultimo = performance.now();
+function bucle(ahora) { const dt = Math.min(0.05, (ahora - ultimo) / 1000); ultimo = ahora; actualizar(dt); dibujar(); requestAnimationFrame(bucle); }
+
+// ---------- entrada ----------
+addEventListener("keydown", (e) => {
+  iniciarAudio();
+  if (e.code === "KeyM") { alternarMudo(); return; }
+  if (escena === "titulo" && (e.code === "Space" || e.code === "Enter")) { empezar(); return; }
+  if (escena === "fin" && e.code === "Enter") { empezar(); return; }
+  if (dialogo && (e.code === "Space" || e.code === "Enter")) { avanzarDialogo(); e.preventDefault(); return; }
+  teclas[e.code] = true;
+  if (e.code.startsWith("Arrow") || e.code === "Space") e.preventDefault();
+});
+addEventListener("keyup", (e) => { teclas[e.code] = false; });
+addEventListener("blur", () => { teclas = {}; });
+const aLienzo = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H }; };
+cv.addEventListener("pointermove", (e) => { puntero = aLienzo(e); });
+cv.addEventListener("pointerdown", (e) => {
+  iniciarAudio(); puntero = aLienzo(e);
+  const b = botones.find(b => dentro(puntero, b)); if (b) { b.accion(); return; }
+  if (escena !== "juego") return;
+  if (dialogo) { avanzarDialogo(); return; }
+  // tocar el muro frente a una puerta: caminar hasta ella y entrar
+  const y = Math.max(PISO_Y0, Math.min(PISO_Y1, puntero.y));
+  destino = { x: Math.max(PISO_X0, Math.min(PISO_X1, puntero.x)), y };
+  if (puntero.y < PISO_Y0) { destino.puerta = true; }
+});
+// al llegar a un destino tocado sobre una puerta, sigue hacia arriba
+setInterval(() => { if (destino && destino.puerta && Math.abs(pj.x - destino.x) < 3 && Math.abs(pj.y - destino.y) < 3) { teclas.ArrowUp = true; setTimeout(() => { teclas.ArrowUp = false; }, 150); destino = null; } }, 50);
+
+// ---------- capturas ----------
+const captura = location.hash.slice(1);
+if (captura.startsWith("captura")) {
+  const esperar = async () => {
+    if (cargadas < total) return setTimeout(esperar, 50);
+    try { await Promise.all([document.fonts.load("10px CSP"), document.fonts.load("bold 10px CSP"), document.fonts.load("bold 20px CSP")]); } catch (e) {}
+    escena = "juego"; tiempo = 47; fundido = 0;
+    if (captura === "captura-a") { sala = "pasillo"; pj.x = 172; pj.y = 112; pj.dir = 1; pj.mov = true; pj.paso = 1; llevando = PAQUETES.slice(1); entregados = [PAQUETES[0]]; }
+    if (captura === "captura-b") { sala = "lab"; pj.x = 168; pj.y = 132; pj.dir = 4; llevando = PAQUETES.slice(); dialogo = { quien: "rosa", lineas: [PAQUETES[0].gracias], i: 0, letras: 999 }; }
+    if (captura === "captura-c") { sala = "camarotes"; pj.x = 120; pj.y = 120; pj.dir = 4; pj.mov = true; pj.paso = 2; llevando = PAQUETES.slice(2); entregados = PAQUETES.slice(0, 2); }
+    if (captura === "captura-d") { sala = "carga"; pj.x = 112; pj.y = 118; pj.dir = 4; dialogo = { quien: "gus", lineas: ["Ah, the new cadet. Four parcels: a chip for Rosa, medicine for Lin, fruit for Noor and a keycard for the captain."], i: 0, letras: 999 }; }
+    reloj = 0.3;
+    const pintar = () => { dibujar(); requestAnimationFrame(pintar); }; pintar();
+  };
+  esperar();
+} else requestAnimationFrame(bucle);
+</script>
+</body>
+</html>
